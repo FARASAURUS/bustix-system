@@ -25,6 +25,7 @@ Contoh: `buatBooking`
 1. bayarBooking(p_booking_code)
 Menandai status pembayaran booking menjadi paid dan mencatat histori pembayaran.
 
+```sql
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS bayarBooking $$
@@ -42,10 +43,12 @@ BEGIN
 END $$
 
 DELIMITER ;
+```
 
 2. cancelBooking(p_booking_code)
 Membatalkan booking dan menyimpan status ke histori.
 
+```sql
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS cancelBooking $$
@@ -63,10 +66,12 @@ BEGIN
 END $$
 
 DELIMITER ;
+```
 
 3. getBookingHistory(p_user_id)
 Menampilkan riwayat booking yang dilakukan oleh user tertentu.
 
+```sql
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS getBookingHistory $$
@@ -82,6 +87,7 @@ BEGIN
 END $$
 
 DELIMITER ;
+```
 
 Dengan menyimpan proses-proses ini di sisi database, sistem menjaga integritas data di level paling dasar, terlepas dari cara aplikasi mengaksesnya.
 
@@ -95,12 +101,11 @@ Fungsinya seperti CCTV digital, yang merekam segala aktivitas penting yang terja
 Peran Trigger booking_history_trigger
 Trigger ini aktif secara otomatis setiap kali ada UPDATE pada tabel bookings. Ia mencatat perubahan status, sehingga sistem dapat:
 
-🔍 Melacak jejak perubahan status booking
+🔍 Melacak jejak perubahan status booking  
+🕵️ Menyediakan histori transaksi pengguna untuk keperluan audit  
+📈 Menyediakan data dasar untuk laporan perkembangan pemesanan
 
-🕵️ Menyediakan histori transaksi pengguna untuk keperluan audit
-
-📈 Menyediakan data dasar untuk laporan perkembangan pemesana
-
+```sql
 CREATE TRIGGER booking_history_trigger
 AFTER UPDATE ON bookings
 FOR EACH ROW
@@ -114,25 +119,23 @@ BEGIN
         );
     END IF;
 END;
+```
 
 ## 🧠 Stored Procedure: buatBooking
 Stored Procedure buatBooking bertindak sebagai titik utama proses pemesanan dalam sistem bustix-system. Procedure ini menyederhanakan dan mengamankan proses booking langsung dari sisi database. Hal ini penting karena setiap pemesanan melibatkan banyak elemen: validasi kursi, penumpang, jadwal, dan penghasilan kode_booking unik.
 
 Dengan menggunakan procedure ini, seluruh proses pemesanan menjadi lebih konsisten, efisien, dan lebih aman dari manipulasi langsung di sisi aplikasi.
 
-📌 Fungsi Utama
-Validasi jumlah kursi yang tersedia
-
-Menolak booking yang melebihi kapasitas bus
-
-Menyimpan informasi penumpang dan kursi
-
-Menghasilkan booking_code unik
-
-Mengembalikan status keberhasilan/gagal via parameter OUT
+📌 Fungsi Utama  
+- Validasi jumlah kursi yang tersedia  
+- Menolak booking yang melebihi kapasitas bus  
+- Menyimpan informasi penumpang dan kursi  
+- Menghasilkan booking_code unik  
+- Mengembalikan status keberhasilan/gagal via parameter OUT
 
 📜 Struktur Pemanggilan
 
+```sql
 CALL buatBooking(
     p_user_id,
     p_schedule_id,
@@ -143,13 +146,11 @@ CALL buatBooking(
     @kode_booking,
     @hasil
 );
+```
 
 💡 Contoh Implementasi di PHP
-user/booking.php
 
-php
-Copy
-Edit
+```php
 // Ambil data dari form
 $userId = $_SESSION['user_id'];
 $scheduleId = $_POST['schedule_id'];
@@ -177,19 +178,14 @@ if ($output['code']) {
 } else {
     echo "Gagal booking: " . $output['message'];
 }
+```
 
 ## 📺 Stored Function – Menampilkan Informasi tanpa Mengubah Data
 Stored function dalam sistem BustiX digunakan untuk mengambil informasi penting tanpa mengubah isi database. Ibarat layar informasi elektronik di terminal bus — fungsinya hanya untuk menampilkan, bukan mencatat ulang.
 
-Contoh paling umum adalah fungsi:
+### Fungsi get_seat_availability(p_schedule_id)
 
-get_seat_availability(schedule_id)
-Fungsi ini mengembalikan jumlah kursi yang masih tersedia untuk jadwal bus tertentu, dan dipanggil baik dari aplikasi frontend maupun prosedur di sisi database.
-
-
-
-🧠 Fungsi get_seat_availability(p_schedule_id)
-
+```sql
 CREATE FUNCTION get_seat_availability(p_schedule_id INT)
 RETURNS INT
 DETERMINISTIC
@@ -206,66 +202,63 @@ BEGIN
 
     RETURN total_capacity - total_booked;
 END;
+```
 
-🔍 Tujuan
-💺 Menampilkan jumlah kursi yang masih bisa dibooking pada jadwal tertentu
-
-💡 Digunakan untuk pre-check sebelum booking dimulai
-
+🔍 Tujuan  
+💺 Menampilkan jumlah kursi yang masih bisa dibooking pada jadwal tertentu  
+💡 Digunakan untuk pre-check sebelum booking dimulai  
 🧠 Dipanggil oleh prosedur buatBooking maupun oleh frontend PHP/JS
 
-💻 Penggunaan di Aplikasi
+### 💻 Penggunaan di Aplikasi
+
 📍 Dalam Prosedur Booking
 
+```sql
 SET @available = get_seat_availability(p_schedule_id);
 IF @available < p_total_seats THEN
     SIGNAL SQLSTATE '45000'
     SET MESSAGE_TEXT = 'Kursi tidak mencukupi';
 END IF;
+```
 
 📍 Dalam Tampilan Jadwal (PHP)
 
+```php
 $stmt = $conn->prepare("SELECT get_seat_availability(?) AS sisa_kursi");
 $stmt->execute([$scheduleId]);
 $data = $stmt->fetch();
 echo "Tersisa " . $data['sisa_kursi'] . " kursi";
+```
 
 📍 Dalam UI (Blade / HTML)
 
+```html
 <div class="text-muted">
     Tersedia: <?= $data['sisa_kursi']; ?> kursi
 </div>
+```
 
 ## 🔄 Backup Otomatis
 Untuk menjaga ketersediaan dan keamanan data, sistem bustix-system dilengkapi fitur backup otomatis berbasis mysqldump yang dijalankan secara berkala. File hasil backup disimpan di dalam folder:
 
-bash
-Copy
-Edit
+```
 /backups
+```
+
 Setiap file backup dinamai dengan format timestamp, sehingga mudah ditelusuri dan dikelola.
 
+### 🛠️ backup_bustix.cmd
 
-🛠️ backup_bustix.cmd
-File ini berfungsi sebagai skrip otomatisasi backup database menggunakan Command Prompt di Windows (contohnya untuk XAMPP atau Laragon).
-
-scripts/backup_bustix.cmd
-
+```cmd
 @echo off
 set DATE=%DATE:~10,4%-%DATE:~4,2%-%DATE:~7,2%
 set TIME=%TIME:~0,2%-%TIME:~3,2%-%TIME:~6,2%
 "C:\laragon\bin\mysql\mysql-8.0.30-winx64\bin\mysqldump.exe" -u root bustix > ..\backups\bustix_backup_%DATE%_%TIME%.sql
-📌 Catatan:
+```
 
-Jalankan file ini dengan klik dua kali atau dari Task Scheduler
+### 💻 backup.php (Backup via Web Server)
 
-Sesuaikan path mysqldump.exe dengan instalasi MySQL di perangkatmu
-
-💻 backup.php (Backup via Web Server)
-Alternatifnya, sistem juga menyediakan file PHP untuk melakukan backup dari antarmuka web:
-
-admin/backup.php
-
+```php
 <?php
 require_once __DIR__ . '/../config/database.php';
 
@@ -274,15 +267,21 @@ $backupFile = __DIR__ . "/../backups/bustix_backup_$date.sql";
 $command = "\"C:\\laragon\\bin\\mysql\\mysql-8.0.30-winx64\\bin\\mysqldump.exe\" -u root bustix > \"$backupFile\"";
 exec($command);
 echo "Backup berhasil disimpan di: $backupFile";
-🗂️ Lokasi Default Backup
+?>
+```
+
+### 🗂️ Lokasi Default Backup
+
 Semua file backup disimpan dalam folder:
 
+```
 /backups/bustix_backup_YYYY-MM-DD_HH-MM-SS.sql
-📅 Penjadwalan Otomatis (Task Scheduler)
+```
+
+### 📅 Penjadwalan Otomatis (Task Scheduler)
+
 Backup dapat dijalankan secara otomatis setiap hari dengan menambahkan scripts/backup_bustix.cmd ke dalam Windows Task Scheduler:
 
-⏰ Jadwal: 1x per hari (misalnya jam 23:59)
-
-🧰 Aksi: Jalankan file .cmd
-
-✅ Hasil: Backup otomatis tanpa intervensi manual
+⏰ Jadwal: 1x per hari (misalnya jam 23:59)  
+🧰 Aksi: Jalankan file .cmd  
+✅ Hasil: Backup otomatis tanpa intervensi manual.
