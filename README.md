@@ -13,6 +13,115 @@ Proyek ini merupakan sistem informasi pemesanan tiket bus berbasis PHP dan MySQL
 Peran dari **stored procedure**, **trigger**, **transaction**, dan **scheduler** pada proyek ini dikembangkan untuk memenuhi skenario sistem tiket bus. Implementasi bisa berbeda pada sistem lain tergantung skema bisnis yang diterapkan.
 
 ---
+### 🔁 Transaction – Menjamin Konsistensi Saat Booking & Pembayaran
+Dalam sistem pemesanan tiket seperti Bustix, transaction digunakan untuk memastikan bahwa seluruh proses booking (mulai dari pemesanan, validasi, hingga pembayaran) dilakukan dalam satu kesatuan logis. Jika salah satu langkah gagal, maka seluruh proses dibatalkan menggunakan ROLLBACK.
+
+🧠 Tujuan:
+✅ Menghindari booking ganda
+
+✅ Menghindari overbooking
+
+✅ Menjaga konsistensi antara booking dan pembayaran
+
+✅ Mencegah data sebagian masuk
+
+🧪 Struktur Transaction di MySQL
+
+```sql
+START TRANSACTION;
+
+-- Simpan data booking
+INSERT INTO bookings (...) VALUES (...);
+
+-- Kurangi jumlah kursi
+UPDATE bus_schedules SET available_seats = available_seats - 1 WHERE id = ...;
+
+-- Simpan transaksi pembayaran
+INSERT INTO payment_transactions (...) VALUES (...);
+
+-- Jika semuanya berhasil:
+COMMIT;
+
+-- Jika ada error di salah satu langkah:
+ROLLBACK;
+```
+
+💻 Implementasi Transaction di PHP (booking.php)
+
+```php
+$database = new Database();
+$db = $database->getConnection();
+
+$error = '';
+$success = '';
+$step = isset($_GET['step']) ? (int)$_GET['step'] : 1;
+
+// Ambil semua rute
+$routes_query = "SELECT * FROM bus_routes ORDER BY route_name";
+$stmt = $db->prepare($routes_query);
+$stmt->execute();
+$routes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Handle form
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (isset($_POST['search_schedule'])) {
+        $route_id = (int)$_POST['route_id'];
+        $travel_date = $_POST['travel_date'];
+
+        if (empty($route_id) || empty($travel_date)) {
+            $error = "Pilih rute dan tanggal perjalanan!";
+        } elseif (strtotime($travel_date) < strtotime(date('Y-m-d'))) {
+            $error = "Tanggal perjalanan tidak boleh di masa lalu!";
+        } else {
+            header("Location: booking.php?step=2&route_id=$route_id&date=$travel_date");
+            exit();
+        }
+    } elseif (isset($_POST['book_ticket'])) {
+        $schedule_id = (int)$_POST['schedule_id'];
+        $passenger_name = trim($_POST['passenger_name']);
+        $passenger_phone = trim($_POST['passenger_phone']);
+        $seat_count = (int)$_POST['seat_count'];
+
+        if (empty($passenger_name) || empty($passenger_phone) || $seat_count < 1) {
+            $error = "Semua field harus diisi dengan benar!";
+        } else {
+            $seat_numbers = implode(',', range(1, $seat_count)); // dummy seat assign
+
+            // 🚨 Booking dijalankan melalui stored procedure yang berisi transaksi
+            $stmt = $db->prepare("CALL buatBooking(?, ?, ?, ?, ?, ?, @booking_code, @result)");
+            try {
+                $stmt->execute([
+                    $_SESSION['user_id'],
+                    $schedule_id,
+                    $passenger_name,
+                    $passenger_phone,
+                    $seat_numbers,
+                    $seat_count
+                ]);
+
+                // Ambil hasil dari prosedur
+                $result_stmt = $db->query("SELECT @booking_code AS booking_code, @result AS result");
+                $result = $result_stmt->fetch(PDO::FETCH_ASSOC);
+
+                $result_msg = $result['result'] ?? '';
+                $booking_code = $result['booking_code'] ?? '';
+
+                if (is_string($result_msg) && strpos($result_msg, 'SUCCESS') !== false) {
+                    header("Location: payment.php?booking_code=" . urlencode((string)$booking_code));
+                    exit();
+                } else {
+                    $error = is_string($result_msg)
+                        ? str_replace('ERROR: ', '', $result_msg)
+                        : 'Gagal memproses booking. Silakan coba lagi.';
+                }
+            } catch (Exception $e) {
+                $error = "Terjadi kesalahan saat booking: " . $e->getMessage();
+            }
+        }
+    }
+}
+```
+
 
 ### 🧠 Stored Procedure
 
