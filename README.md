@@ -153,6 +153,42 @@ END $$
 DELIMITER ;
 ```
 
+```php
+// Ambil koneksi database
+$database = new Database();
+$db = $database->getConnection();
+
+$userId = $_SESSION['user_id'];
+$scheduleId = $_POST['schedule_id'];
+$passengerName = $_POST['passenger_name'];
+$passengerPhone = $_POST['passenger_phone'];
+$seats = $_POST['seats']; // array
+$seatNumbers = implode(',', $seats);
+$totalSeats = count($seats);
+
+try {
+    $stmt = $db->prepare("CALL buatBooking(?, ?, ?, ?, ?, ?, @booking_code, @result)");
+    $stmt->execute([
+        $userId,
+        $scheduleId,
+        $passengerName,
+        $passengerPhone,
+        $seatNumbers,
+        $totalSeats
+    ]);
+
+    $output = $db->query("SELECT @booking_code AS booking_code, @result AS result")->fetch();
+
+    if (strpos($output['result'], 'SUCCESS') !== false) {
+        echo "✅ Booking berhasil. Kode: " . $output['booking_code'];
+    } else {
+        echo "❌ Gagal: " . $output['result'];
+    }
+} catch (PDOException $e) {
+    echo "❌ Error SQL: " . $e->getMessage();
+}
+```
+
 2. batalkanBooking(p_booking_code)
 Membatalkan booking dan menyimpan status ke histori.
 
@@ -174,6 +210,18 @@ END $$
 
 DELIMITER ;
 ```
+```php
+$bookingCode = $_GET['booking_code']; // dari URL
+
+try {
+    $stmt = $db->prepare("CALL batalkanBooking(?)");
+    $stmt->execute([$bookingCode]);
+
+    echo "Booking $bookingCode berhasil dibatalkan.";
+} catch (PDOException $e) {
+    echo "Error saat pembatalan: " . $e->getMessage();
+}
+```
 
 3. getBookingHistory(p_user_id)
 Menampilkan riwayat booking yang dilakukan oleh user tertentu.
@@ -194,6 +242,31 @@ BEGIN
 END $$
 
 DELIMITER ;
+```
+
+```php
+$userId = $_SESSION['user_id'];
+
+try {
+    $stmt = $db->prepare("CALL getBookingHistory(?)");
+    $stmt->execute([$userId]);
+
+    echo "<h3>Riwayat Booking Anda</h3>";
+    echo "<table><tr><th>Kode</th><th>Aksi</th><th>Status</th><th>Bayar</th><th>Waktu</th></tr>";
+
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        echo "<tr>
+                <td>{$row['booking_code']}</td>
+                <td>{$row['action_type']}</td>
+                <td>{$row['booking_status']}</td>
+                <td>{$row['payment_status']}</td>
+                <td>{$row['timestamp']}</td>
+              </tr>";
+    }
+    echo "</table>";
+} catch (PDOException $e) {
+    echo "❌ Error ambil histori: " . $e->getMessage();
+}
 ```
 
 Dengan menyimpan proses-proses ini di sisi database, sistem menjaga integritas data di level paling dasar, terlepas dari cara aplikasi mengaksesnya.
@@ -226,6 +299,76 @@ BEGIN
         );
     END IF;
 END;
+```
+
+✅ 1. Contoh Trigger INSERT → booking_create_trigger
+📄 PHP Code: Menambahkan booking baru (memicu INSERT trigger)
+```php
+$booking_code = 'TRG-' . time(); // kode unik
+$stmt = $db->prepare("
+    INSERT INTO bookings (
+        user_id, schedule_id, booking_code,
+        passenger_name, passenger_phone,
+        seat_numbers, total_seats, total_amount,
+        booking_status, payment_status, booking_date
+    ) VALUES (
+        :user_id, :schedule_id, :booking_code,
+        :name, :phone,
+        :seats, :total_seats, :amount,
+        'pending', 'unpaid', NOW()
+    )
+");
+
+$stmt->execute([
+    'user_id' => $_SESSION['user_id'],
+    'schedule_id' => 1,
+    'booking_code' => $booking_code,
+    'name' => 'Test Trigger',
+    'phone' => '081122334455',
+    'seats' => 'A1',
+    'total_seats' => 1,
+    'amount' => 75000
+]);
+
+echo "Booking berhasil dibuat.<br>";
+```
+
+✅ 2. Contoh Trigger UPDATE → booking_history_trigger dan booking_cancel_trigger
+📄 PHP Code: Update status booking menjadi cancelled
+```php
+$stmt = $db->prepare("
+    UPDATE bookings
+    SET booking_status = 'cancelled', payment_status = 'refunded'
+    WHERE booking_code = :kode
+");
+
+$stmt->execute(['kode' => $booking_code]);
+
+echo "Booking berhasil dibatalkan.<br>";
+```
+
+✅ 3. Contoh Trigger DELETE → booking_delete_trigger
+📄 PHP Code: Hapus booking (memicu trigger BEFORE DELETE)
+```php
+$stmt = $db->prepare("DELETE FROM bookings WHERE booking_code = :kode");
+$stmt->execute(['kode' => $booking_code]);
+
+echo "Booking berhasil dihapus.<br>";
+```
+
+🔍 Cek Hasil Trigger
+Setelah operasi-operasi di atas, kamu bisa mengecek hasil kerja trigger:
+
+```php
+$stmt = $db->prepare("SELECT * FROM booking_history WHERE booking_id IS NOT NULL ORDER BY timestamp DESC LIMIT 5");
+$stmt->execute();
+$history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+echo "<h4>Histori Booking</h4><ul>";
+foreach ($history as $row) {
+    echo "<li><b>Aksi:</b> {$row['action_type']} | <b>Status:</b> {$row['booking_status']} | <b>Bayar:</b> {$row['payment_status']}</li>";
+}
+echo "</ul>";
 ```
 
 ## 🧠 Stored Procedure: buatBooking
