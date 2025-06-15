@@ -22,14 +22,13 @@ Procedure digunakan untuk mengelola proses pemesanan tiket, pembayaran, dan pemb
 
 Contoh: `buatBooking`
 
-1. bayarBooking(p_booking_code)
+1. buatBooking(p_booking_code)
 Menandai status pembayaran booking menjadi paid dan mencatat histori pembayaran.
 
 ```sql
 DELIMITER $$
 
-DROP PROCEDURE IF EXISTS bayarBooking $$
-CREATE PROCEDURE bayarBooking(
+CREATE PROCEDURE buatBooking(
     IN p_booking_code VARCHAR(20)
 )
 BEGIN
@@ -45,14 +44,13 @@ END $$
 DELIMITER ;
 ```
 
-2. cancelBooking(p_booking_code)
+2. batalkanBooking(p_booking_code)
 Membatalkan booking dan menyimpan status ke histori.
 
 ```sql
 DELIMITER $$
 
-DROP PROCEDURE IF EXISTS cancelBooking $$
-CREATE PROCEDURE cancelBooking(
+CREATE PROCEDURE batalkanBooking(
     IN p_booking_code VARCHAR(20)
 )
 BEGIN
